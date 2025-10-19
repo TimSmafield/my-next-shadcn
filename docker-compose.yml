@@ -1,28 +1,25 @@
-# docker-compose.yml
 services:
   web:
     image: node:22-alpine
-    working_dir: /app
+    working_dir: /srv
     ports:
       - "3000:3000"
-    environment:
-      NEXT_TELEMETRY_DISABLED: "1"
-      REPO_URL: "https://github.com/TimSmafield/my-next-shadcn.git"
-      BRANCH: "master"
     command:
       - sh
       - -lc
       - |
         set -e
-        apk add --no-cache git libc6-compat
-        corepack enable && corepack prepare pnpm@latest --activate
+        apk add --no-cache git ca-certificates libc6-compat
+        update-ca-certificates
 
-        if [ ! -d /app/.git ]; then
-          git clone --depth 1 -b "$BRANCH" "$REPO_URL" /app
-        else
-          git -C /app fetch --depth 1 origin "$BRANCH"
-          git -C /app reset --hard "origin/$BRANCH"
-        fi
+        # absolute paths only; create target dir explicitly
+        rm -rf /srv/app && mkdir -p /srv/app
 
-        pnpm install
-        pnpm dev -p 3000 -H 0.0.0.0
+        # hardcoded public repo + branch
+        git clone --depth 1 -b master \
+          https://github.com/TimSmafield/my-next-shadcn.git \
+          /srv/app
+
+        cd /srv/app
+        npm install
+        npm run dev -- -p 3000 -H 0.0.0.0
