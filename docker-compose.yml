@@ -1,0 +1,15 @@
+services:
+  web:
+    image: node:22-alpine
+    working_dir: /work
+    volumes:
+      - .:/work
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_TELEMETRY_DISABLED: "1"
+    command: >
+      sh -lc "corepack enable &&
+              corepack prepare pnpm@latest --activate &&
+              pnpm install &&
+              pnpm dev -p 3000 -H 0.0.0.0"
