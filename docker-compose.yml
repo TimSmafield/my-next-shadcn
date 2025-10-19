@@ -1,7 +1,7 @@
 services:
   web:
     image: node:22-alpine
-    working_dir: /srv
+    working_dir: /srv/app
     ports:
       - "3000:3000"
     command:
@@ -9,17 +9,23 @@ services:
       - -lc
       - |
         set -e
-        apk add --no-cache git ca-certificates libc6-compat
+        apk add --no-cache git ca-certificates libc6-compat wget
         update-ca-certificates
 
-        # absolute paths only; create target dir explicitly
+        # fresh checkout each run
         rm -rf /srv/app && mkdir -p /srv/app
-
-        # hardcoded public repo + branch
         git clone --depth 1 -b master \
           https://github.com/TimSmafield/my-next-shadcn.git \
           /srv/app
 
-        cd /srv/app
-        npm install
+        npm ci || npm i
+        # Next.js dev server, listen on all interfaces
         npm run dev -- -p 3000 -H 0.0.0.0
+    healthcheck:
+      # heartbeat hits your Next.js route: /api/healthz
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      interval: 10s
+      timeout: 2s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
