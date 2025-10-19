@@ -1,15 +1,28 @@
+# docker-compose.yml
 services:
   web:
     image: node:22-alpine
-    working_dir: /work
-    volumes:
-      - .:/work
+    working_dir: /app
     ports:
       - "3000:3000"
     environment:
       NEXT_TELEMETRY_DISABLED: "1"
-    command: >
-      sh -lc "corepack enable &&
-              corepack prepare pnpm@latest --activate &&
-              pnpm install &&
-              pnpm dev -p 3000 -H 0.0.0.0"
+      REPO_URL: "https://github.com/TimSmafield/my-next-shadcn.git"
+      BRANCH: "master"
+    command:
+      - sh
+      - -lc
+      - |
+        set -e
+        apk add --no-cache git libc6-compat
+        corepack enable && corepack prepare pnpm@latest --activate
+
+        if [ ! -d /app/.git ]; then
+          git clone --depth 1 -b "$BRANCH" "$REPO_URL" /app
+        else
+          git -C /app fetch --depth 1 origin "$BRANCH"
+          git -C /app reset --hard "origin/$BRANCH"
+        fi
+
+        pnpm install
+        pnpm dev -p 3000 -H 0.0.0.0
