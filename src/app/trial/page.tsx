@@ -2,19 +2,29 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
+import { ReloadIcon } from "@radix-ui/react-icons";
 
 type StartResp = { trial_id: string; pubkey: string; ts_server: number };
 
-const Q_PRESETS = [0.55, 0.6, 0.65, 0.7, 0.8, 0.9];
-
 export default function TrialPage() {
-  const [trialId, setTrialId]   = useState<string>("");
-  const [pubkey, setPubkey]     = useState<string>("—");
-  const [guess, setGuess]       = useState<"L" | "R" | null>(null);
-  const [q, setQ]               = useState<number>(0.6);
-  const [busy, setBusy]         = useState(false);
+  const [trialId, setTrialId] = useState("");
+  const [pubkey, setPubkey] = useState("—");
+  const [guess, setGuess] = useState<"L" | "R" | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [focusLock, setFocusLock] = useState(true);
+  const [mmss, setMmss] = useState("00:00");
+  const mountRef = useRef<number>(Date.now());
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const d = Math.floor((Date.now() - mountRef.current) / 1000);
+      const m = String(Math.floor(d / 60)).padStart(2, "0");
+      const s = String(d % 60).padStart(2, "0");
+      setMmss(`${m}:${s}`);
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
 
   const nextTrial = useCallback(async () => {
     setBusy(true);
@@ -24,103 +34,113 @@ export default function TrialPage() {
     setTrialId(j.trial_id);
     setPubkey(j.pubkey);
     setBusy(false);
-    // focus wrapper for keyboard capture
     setTimeout(() => wrapRef.current?.focus(), 0);
   }, []);
 
   const saveAndNext = useCallback(async () => {
     if (!trialId || !guess) return;
     setBusy(true);
+    wrapRef.current?.classList.add("ring-2", "ring-primary/50");
+    setTimeout(() => wrapRef.current?.classList.remove("ring-2", "ring-primary/50"), 250);
+
     await fetch("/api/trials/submit", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ trial_id: trialId, guess, confidence: q }),
+      body: JSON.stringify({ trial_id: trialId, guess }),
     });
     await nextTrial();
-  }, [trialId, guess, q, nextTrial]);
+  }, [trialId, guess, nextTrial]);
 
   useEffect(() => { nextTrial(); }, [nextTrial]);
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!focusLock) return;
     const k = e.key.toLowerCase();
     if (k === "l") setGuess("L");
     if (k === "r") setGuess("R");
-    if (k >= "1" && k <= "6") setQ(Q_PRESETS[Number(k) - 1]);
     if (k === "enter") saveAndNext();
     if (k === "escape") setGuess(null);
-  }, [saveAndNext]);
+  }, [focusLock, saveAndNext]);
 
   return (
     <div
       ref={wrapRef}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      className="min-h-dvh bg-background text-foreground flex items-center justify-center p-6"
+      className={`min-h-dvh bg-gradient-to-b from-background to-muted/30 text-foreground
+                  ${focusLock ? "cursor-none" : ""} flex flex-col`}
     >
-      <div className="w-full max-w-2xl space-y-6">
-        {/* Pubkey */}
-        <div className="rounded-2xl border shadow p-6">
-          <div className="text-sm opacity-70 mb-2">Compressed pubkey</div>
-          <div className="font-mono text-2xl break-all select-text">{pubkey}</div>
-        </div>
-
-        {/* Choice */}
-        <div className="grid grid-cols-2 gap-3">
-          <Button
-            size="lg"
-            className={`h-14 text-lg rounded-2xl ${guess==="L" ? "" : "opacity-90"}`}
-            variant={guess==="L" ? "default" : "secondary"}
-            onClick={() => setGuess("L")}
-            disabled={busy}
-          >
-            Left (L)
-          </Button>
-          <Button
-            size="lg"
-            className={`h-14 text-lg rounded-2xl ${guess==="R" ? "" : "opacity-90"}`}
-            variant={guess==="R" ? "default" : "secondary"}
-            onClick={() => setGuess("R")}
-            disabled={busy}
-          >
-            Right (R)
-          </Button>
-        </div>
-
-        {/* Confidence */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm opacity-70">Confidence q</div>
-            <div className="text-sm font-medium">{q.toFixed(2)}</div>
+      {/* Top bar */}
+      <div className="sticky top-0 z-10 backdrop-blur supports-[backdrop-filter]:bg-background/70 border-b">
+        <div className="mx-auto max-w-3xl px-4 h-12 flex items-center justify-between">
+          <div className="text-xs sm:text-sm opacity-70">
+            Session <span className="font-medium">{trialId ? trialId.slice(0, 8) : "—"}</span>
           </div>
-          <Slider
-            value={[q]}
-            min={0.5}
-            max={1.0}
-            step={0.01}
-            onValueChange={(v) => setQ(Math.max(0.5, Math.min(1, v[0])))}
-          />
-          <div className="flex justify-between text-xs mt-2 opacity-70">
-            {Q_PRESETS.map((v) => <span key={v}>{String(Math.round(v*100))}</span>)}
+          <div className="flex items-center gap-3">
+            <span className="text-xs sm:text-sm tabular-nums opacity-70">{mmss}</span>
+            <Button
+              variant={focusLock ? "default" : "secondary"}
+              size="sm"
+              onClick={() => setFocusLock(v => !v)}
+              className="rounded-full"
+              title="Toggle Focus Lock (keyboard-only)"
+            >
+              {focusLock ? "Focus: On" : "Focus: Off"}
+            </Button>
           </div>
-        </div>
-
-        {/* Save */}
-        <div className="flex gap-3">
-          <Button
-            size="lg"
-            className="h-14 text-lg rounded-2xl flex-1"
-            onClick={saveAndNext}
-            disabled={busy || !guess}
-          >
-            Save & Next (Enter)
-          </Button>
-        </div>
-
-        {/* Tiny footer (no scoring) */}
-        <div className="text-xs opacity-60 text-center">
-          Collection view shows no correctness; analytics come later.
         </div>
       </div>
+
+      {/* Main */}
+      <main className="flex-1">
+        <div className="mx-auto max-w-3xl px-4 py-10 sm:py-14">
+          {/* Pubkey card */}
+          <div className="rounded-2xl border shadow-sm bg-card">
+            <div className="px-6 pt-5 pb-3 text-xs sm:text-sm text-muted-foreground">Compressed pubkey</div>
+            <div className="px-6 pb-6">
+              <div className="font-mono text-2xl sm:text-3xl leading-snug tracking-tight select-text break-all">
+                {pubkey}
+              </div>
+            </div>
+          </div>
+
+          {/* Choice row */}
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <Button
+              size="lg"
+              className={`h-16 text-lg rounded-2xl transition-all duration-150
+                          ${guess==="L" ? "scale-[1.02]" : "opacity-90"}`}
+              variant={guess==="L" ? "default" : "secondary"}
+              onClick={() => setGuess("L")}
+              disabled={busy}
+            >
+              Left <span className="ml-2 opacity-70 text-sm">(L)</span>
+            </Button>
+            <Button
+              size="lg"
+              className={`h-16 text-lg rounded-2xl transition-all duration-150
+                          ${guess==="R" ? "scale-[1.02]" : "opacity-90"}`}
+              variant={guess==="R" ? "default" : "secondary"}
+              onClick={() => setGuess("R")}
+              disabled={busy}
+            >
+              Right <span className="ml-2 opacity-70 text-sm">(R)</span>
+            </Button>
+          </div>
+
+          {/* Save strip */}
+          <div className="mt-6 flex gap-3">
+            <Button
+              size="lg"
+              className="h-14 text-lg rounded-2xl flex-1"
+              onClick={saveAndNext}
+              disabled={busy || !guess}
+            >
+              {busy ? <><ReloadIcon className="mr-2 h-4 w-4 animate-spin" />Saving…</> : "Save & Next (Enter)"}
+            </Button>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
